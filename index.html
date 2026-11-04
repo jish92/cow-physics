@@ -7,6 +7,7 @@
 <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.169.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.169.0/examples/jsm/"}}</script></head>
 <body><div id="msg">Loading…</div>
 <div id="ui"><div><button id="nudge">Nudge</button><button id="rock">Rock</button><button id="reset">Reset</button></div>
+<label>Bounce style<select id="bs"><option value="pend" selected>Pendulum (v4b-style)</option><option value="res">Research (subtle)</option></select></label>
 <label>Rock back Hz<input id="rb" type="range" min="0" max="1.5" step="0.05" value="0"><span id="rbv">0</span></label>
 <label>Strength<input id="str" type="range" min="0.2" max="3" step="0.1" value="1"><span id="strv">1</span></label>
 <label>Freq Hz<input id="frq" type="range" min="1" max="4" step="0.1" value="2.1"><span id="frqv">2.1</span></label>
@@ -19,7 +20,7 @@ const S=new THREE.Scene();S.background=new THREE.Color(0xdfe3e8);
 const C=new THREE.PerspectiveCamera(35,innerWidth/innerHeight,0.05,100);C.position.set(1.9,0.9,0.6);
 const O=new OrbitControls(C,R.domElement);O.target.set(0,0.5,0);O.enableDamping=true;
 S.add(new THREE.HemisphereLight(0xffffff,0x8a8a8a,2.2));const dl=new THREE.DirectionalLight(0xffffff,2);dl.position.set(2,4,3);S.add(dl);
-const st={str:1,f:2.1,z:0.25};st.rb=0;for(const[id,k]of[['rb','rb'],['str','str'],['frq','f'],['dmp','z']]){const e=document.getElementById(id);e.oninput=()=>{st[k]=+e.value;document.getElementById(id+'v').textContent=e.value}}
+const st={str:1,f:2.1,z:0.25};st.rb=0;st.bs='pend';document.getElementById('bs').onchange=e=>{st.bs=e.target.value;for(const p of PND)p.tf=p.tl=p.vf=p.vl=0;for(const s of springs){s.d.set(0,0,0);s.v.set(0,0,0)}};for(const[id,k]of[['rb','rb'],['str','str'],['frq','f'],['dmp','z']]){const e=document.getElementById(id);e.oninput=()=>{st[k]=+e.value;document.getElementById(id+'v').textContent=e.value}}
 const W=window;W.cow={ready:false,errs:[]};
 const root=new THREE.Group();S.add(root);let meshes=[],springs=[],rockT=-1;
 new GLTFLoader().load('cow.glb',g=>{
@@ -27,11 +28,11 @@ new GLTFLoader().load('cow.glb',g=>{
  m.traverse(o=>{if(o.isMesh){meshes.push(o);o.frustumCulled=false;const ms=Array.isArray(o.material)?o.material:[o.material];ms.forEach(x=>{x.transparent=false;x.depthWrite=true;x.opacity=1;if(/hair|eyebrow|eyelash|high-poly/i.test(x.name)){x.alphaTest=0.5;x.side=THREE.DoubleSide}})}});
  const mix=new THREE.AnimationMixer(m);g.animations.forEach(c=>mix.clipAction(c).play());mix.setTime(0);
  m.updateMatrixWorld(true);
- const box=new THREE.Box3().setFromObject(m);const c=box.getCenter(new THREE.Vector3());O.target.copy(c);const sz=box.getSize(new THREE.Vector3()).length();const fit=()=>{const k=Math.max(1,1.3/C.aspect);C.position.set(c.x+0.85*sz*k,c.y+0.2*sz,c.z+0.5*sz*k);O.update()};fit();W.cow.fit=fit;
+ const box=new THREE.Box3().setFromObject(m);const c=box.getCenter(new THREE.Vector3());O.target.copy(c);const sz=box.getSize(new THREE.Vector3()).length();const fit=()=>{const k=Math.max(1,1.3/C.aspect);C.position.set(c.x+0.85*sz*k,c.y+0.2*sz,c.z+0.5*sz*k);O.update()};fit();W.cow.fit=fit;W.cow.view=(x,y,z,t)=>{if(t){O.target.copy(root.getObjectByName(t).getWorldPosition(new THREE.Vector3()));O.target.y-=0.06}C.position.copy(O.target).add(new THREE.Vector3(x,y,z));O.update()};W.cow.hipDir=()=>hipDir().toArray();W.cow.freeze=v=>{W.cow.frozen=v};
  const def={breast:{max:0.03,rib:0.012,lat:0.008,f:1,sag:0.85},glute:{max:0.022,rib:0.022,lat:0.012,f:0.9,sag:0.6}};
  for(const n of['breast_l','breast_r','glute_l','glute_r']){const b=m.getObjectByName(n);if(!b)continue;const t=n.split('_')[0];
   springs.push({b,name:n,type:t,p:def[t],rest:b.position.clone(),d:new THREE.Vector3(),v:new THREE.Vector3(),side:n.endsWith('_l')?1:-1,wp:new THREE.Vector3()})}
- alignHang(m);initRock(m);
+ alignHang(m);initRock(m);initPend(m);
  W.cow.springs=springs.map(s=>s.name);W.cow.ready=true;document.getElementById('msg').textContent='';
 },undefined,e=>{W.cow.errs.push(String(e));document.getElementById('msg').textContent='Load error'});
 function breastAxis(m,name){const body=meshes.find(o=>o.isSkinnedMesh&&o.skeleton.bones.some(b=>b.name==name)&&o.geometry.attributes.position.count>10000&&/base$/.test(o.geometry.name||o.name)||o.name=='Body')||meshes.find(o=>o.isSkinnedMesh);
@@ -66,13 +67,36 @@ function rockPose(th,lean){restore();const K=W0.calf_l.p.clone().add(W0.calf_r.p
  const sp=B('spine_01');setWQ(sp,new THREE.Quaternion().setFromAxisAngle(ax,-SG*th*lean).multiply(wq(sp)));
  for(const s of'lr'){setWQ(B('calf_'+s),W0['calf_'+s].q);setWQ(B('foot_'+s),W0['foot_'+s].q);
   for(let i=0;i<2;i++)twoBone(B('upperarm_'+s),B('lowerarm_'+s),B('hand_'+s),W0['hand_'+s].p);setWQ(B('hand_'+s),W0['hand_'+s].q)}}
-W.cow.setRock=(v)=>{st.rb=v;document.getElementById('rb').value=v;document.getElementById('rbv').textContent=v};
+W.cow.setStyle=v=>{const e=document.getElementById('bs');e.value=v;e.onchange({target:e})};W.cow.setRock=(v)=>{st.rb=v;document.getElementById('rb').value=v;document.getElementById('rbv').textContent=v};
+const PEN={corr:0.025,f:1.35,z:0.15,G:4.2,a0:0.5,KB:3000,L:0.08,fwd:55,fsoft:44,back:12,bsoft:5,lat:14,lsoft:8,K:900,bump:0.35};W.cow.pen=PEN;const PND=[];const DN=new THREE.Vector3(0,-1,0);
+function initPend(m){for(const n of['breast_l','breast_r']){const b=m.getObjectByName(n);PND.push({b,n,ax:DN.clone().applyQuaternion(wq(b).invert()),tf:0,tl:0,vf:0,vl:0,pa:null,pv:new THREE.Vector3(),mf:0,mb:0,ml:0})}
+ const mid=wp(PND[0].b).add(wp(PND[1].b)).multiplyScalar(0.5);for(const p of PND)p.mid=mid;
+ W.cow.pend=()=>PND.map(p=>({n:p.n,fwd:+(p.rf*57.2958).toFixed(1),lat:+(p.rl*57.2958).toFixed(1),abs:+(p.tf*57.2958).toFixed(1)}));
+ W.cow.pendMax=()=>PND.map(p=>({n:p.n,maxFwd:+(p.mf*57.2958).toFixed(1),maxBack:+(p.mb*57.2958).toFixed(1),maxLat:+(p.ml*57.2958).toFixed(1)}));
+ W.cow.forcePend=(f,l=0)=>{W.cow.frozen=true;for(const p of PND){p.tf=f/57.2958;p.tl=l/57.2958;p.vf=p.vl=0}};W.cow.pax=()=>PND.map(p=>p.ax.toArray().map(v=>+v.toFixed(3)));W.cow.pendResetMax=()=>{for(const p of PND)p.mf=p.mb=p.ml=0}}
+function pendFrames(){const f=hipDir().negate(),lat=new THREE.Vector3(-f.z,0,f.x);return {f,lat}}
+function pendStep(dt,fr){const w0=(2*Math.PI*PEN.f)**2,c=2*PEN.z*2*Math.PI*PEN.f,D=THREE.MathUtils.degToRad;
+ for(const p of PND){const a0=p.ax.clone().applyQuaternion(wq(p.b));const ins=Math.sign(p.mid.clone().sub(wp(p.b)).dot(fr.lat))||1;
+  const pf=Math.atan2(a0.dot(fr.f),-a0.y),pl=Math.atan2(a0.dot(fr.lat)*ins,-a0.y);
+  const an=wp(p.b);if(!p.pa)p.pa=an.clone();const vel=an.clone().sub(p.pa).divideScalar(Math.max(dt,1e-3));const acc=vel.clone().sub(p.pv).divideScalar(Math.max(dt,1e-3));{const al=acc.length();if(al>1e-6)acc.multiplyScalar(PEN.a0*Math.tanh(al/PEN.a0)/al)}p.pa.copy(an);p.pv.copy(vel);
+  const n=8,h=dt/n;for(let i=0;i<n;i++){
+   let af=-w0*Math.sin(p.tf)-c*p.vf-PEN.G*acc.dot(fr.f)/PEN.L*Math.cos(p.tf),al=-w0*Math.sin(p.tl)-c*p.vl-PEN.G*acc.dot(fr.lat)*ins/PEN.L*Math.cos(p.tl);
+   const rf=p.tf-pf,rl=p.tl-pl,fs=D(PEN.fsoft),fm=D(PEN.fwd),bs=D(PEN.bsoft),bm=D(PEN.back),ls=D(PEN.lsoft),lm=D(PEN.lat);
+   if(rf>fs){const e=(rf-fs)/(fm-fs);af-=PEN.K*e*e*(rf-fs)+ (p.vf>0?4*c*p.vf*e:0)}
+   if(rf<-bs){const e=(-rf-bs)/(bm-bs);af+=PEN.KB*e*e*(-rf-bs)-(p.vf<0?4*c*p.vf*e:0)}
+   if(Math.abs(rl)>ls){const e=(Math.abs(rl)-ls)/(lm-ls);al-=Math.sign(rl)*PEN.K*e*e*(Math.abs(rl)-ls)}
+   p.vf+=af*h;p.vl+=al*h;p.tf+=p.vf*h;p.tl+=p.vl*h;
+   if(p.tf-pf>fm){p.tf=pf+fm;p.vf=Math.min(p.vf,0)}if(p.tf-pf<-bm){p.tf=pf-bm;p.vf=Math.max(p.vf,0)}if(Math.abs(p.tl-pl)>lm){p.tl=pl+Math.sign(p.tl-pl)*lm;p.vl=0}}
+  p.rf=p.tf-pf;p.rl=p.tl-pl;p.mf=Math.max(p.mf,p.rf);p.mb=Math.min(p.mb,p.rf);p.ml=Math.max(p.ml,Math.abs(p.rl));
+  const d=DN.clone().applyAxisAngle(DN.clone().cross(fr.f).normalize(),p.tf);d.applyAxisAngle(d.clone().cross(fr.lat.clone().multiplyScalar(ins)).normalize(),p.tl);
+  setWQ(p.b,new THREE.Quaternion().setFromUnitVectors(a0,d.normalize()).multiply(wq(p.b)));
+  const sr=Math.sin(p.tf-pf),sl=Math.sin(p.tl-pl),off=PEN.corr*(sr*sr+sl*sl);if(off>1e-5)setWP(p.b,wp(p.b).addScaledVector(d,off))}}
 // world up=y. forward/back along x/z depends on model; ribs direction for breasts = toward pelvis
 const tmp=new THREE.Vector3(),tmp2=new THREE.Vector3();
 function hipDir(){const p=root.getObjectByName('pelvis'),s=root.getObjectByName('spine_03');if(!p||!s)return new THREE.Vector3(1,0,0);return p.getWorldPosition(new THREE.Vector3()).sub(s.getWorldPosition(new THREE.Vector3())).setY(0).normalize()}
-function impulse(pt,dir,mag,rad=0.14){for(const s of springs){s.b.getWorldPosition(s.wp);const w=Math.exp(-(s.wp.distanceToSquared(pt))/(rad*rad));s.v.addScaledVector(dir,mag*w)}}
+function impulse(pt,dir,mag,rad=0.14){if(st.bs=='pend'){const fr=pendFrames();for(const p of PND){const w=Math.exp(-(wp(p.b).distanceToSquared(pt))/(rad*rad));const ins=Math.sign(p.mid.clone().sub(wp(p.b)).dot(fr.lat))||1;p.vf+=dir.dot(fr.f)*mag*w*PEN.bump/PEN.L*0.5;p.vl+=dir.dot(fr.lat)*ins*mag*w*PEN.bump/PEN.L*0.5;p.vf+=Math.abs(dir.y)*mag*w*PEN.bump/PEN.L*0.3}}for(const s of springs){s.b.getWorldPosition(s.wp);const w=Math.exp(-(s.wp.distanceToSquared(pt))/(rad*rad));s.v.addScaledVector(dir,mag*w)}}
 function step(dt){const k0=(2*Math.PI*st.f)**2,hd=hipDir();
- for(const s of springs){const k=k0*s.p.f,c=2*st.z*Math.sqrt(k);
+ for(const s of springs){if(st.bs=='pend'&&s.type=='breast'){s.d.set(0,0,0);s.v.set(0,0,0);continue}const k=k0*s.p.f,c=2*st.z*Math.sqrt(k);
   // gravity bias: softer going down, stiffer going up
   const ky=s.d.y<0?k*s.p.sag:k/s.p.sag;
   const a=new THREE.Vector3(-k*s.d.x-c*s.v.x,-ky*s.d.y-c*s.v.y,-k*s.d.z-c*s.v.z);
@@ -91,11 +115,11 @@ function bump(x,y){const r=R.domElement.getBoundingClientRect();ray.setFromCamer
  const h=ray.intersectObjects(meshes,false).filter(h=>!/YogaMat|Cube/.test(h.object.name))[0];W.cow.lastHit=h?h.point.toArray():null;if(!h)return false;
  impulse(h.point,ray.ray.direction.clone(),1.6*st.str,0.2);W.cow.bumps=(W.cow.bumps||0)+1;return true}
 W.cow.bump=bump;
-document.getElementById('nudge').onclick=()=>{const d=hipDir().multiplyScalar(-1);d.y=-0.4;for(const s of springs)s.v.addScaledVector(d,0.45*st.str)};
+document.getElementById('nudge').onclick=()=>{for(const p of PND)p.vf+=3*st.str;const d=hipDir().multiplyScalar(-1);d.y=-0.4;for(const s of springs)s.v.addScaledVector(d,0.45*st.str)};
 document.getElementById('rock').onclick=()=>{rockT=0};
-document.getElementById('reset').onclick=()=>{for(const s of springs){s.d.set(0,0,0);s.v.set(0,0,0)}rockT=-1;root.position.set(0,0,0)};
+document.getElementById('reset').onclick=()=>{for(const p of PND)p.tf=p.tl=p.vf=p.vl=0;for(const s of springs){s.d.set(0,0,0);s.v.set(0,0,0)}rockT=-1;root.position.set(0,0,0)};
 let last=performance.now(),prevRoot=new THREE.Vector3(),prevVel=new THREE.Vector3();
-function loop(now){requestAnimationFrame(loop);let dt=Math.min(0.05,(now-last)/1000);last=now;
+function loop(now){requestAnimationFrame(loop);let dt=Math.min(0.05,(now-last)/1000);last=now;if(W.cow.frozen)dt=0;
  if(springs.length){
   if(rockT>=0){rockT+=dt;const hd=hipDir();const a=0.05*st.str*Math.sin(2*Math.PI*0.6*rockT)*Math.exp(-rockT*0.5);root.position.copy(hd).multiplyScalar(a);if(rockT>6){rockT=-1;root.position.set(0,0,0)}}
   // inertial drive from root motion
@@ -103,7 +127,7 @@ function loop(now){requestAnimationFrame(loop);let dt=Math.min(0.05,(now-last)/1
   root.updateMatrixWorld(true);
   for(const s of springs){const an=s.b.parent.localToWorld(s.rest.clone());if(!s.pa){s.pa=an.clone();s.pv=new THREE.Vector3()}const vel=an.clone().sub(s.pa).divideScalar(Math.max(dt,1e-3));s.acc=vel.clone().sub(s.pv).divideScalar(Math.max(dt,1e-3));if(s.acc.length()>60)s.acc.setLength(60);s.pa.copy(an);s.pv.copy(vel);const a=s.acc.length();s.ae=a>1e-6?s.acc.clone().multiplyScalar(DRV.g*DRV.a0*Math.tanh(a/DRV.a0)/a):s.acc.clone().set(0,0,0)}
   const n=8;for(let i=0;i<n;i++){for(const s of springs)s.v.addScaledVector(s.ae,-dt/n);step(dt/n)}
-  apply();W.cow.disp=springs.map(s=>+(s.d.length()*100).toFixed(2));}
+  apply();if(st.bs=='pend'&&PND.length){root.updateMatrixWorld(true);pendStep(dt,pendFrames())}W.cow.disp=springs.map(s=>+(s.d.length()*100).toFixed(2));}
  O.update();R.render(S,C)}
 requestAnimationFrame(loop);
 addEventListener('resize',()=>{C.aspect=innerWidth/innerHeight;C.updateProjectionMatrix();R.setSize(innerWidth,innerHeight)});
