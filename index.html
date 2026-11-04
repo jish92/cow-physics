@@ -54,7 +54,7 @@ function initRock(m){RM=m;REST=new Map();m.traverse(o=>{if(o.isBone)REST.set(o,{
  for(const n of NB){const o=B(n);W0[n]={p:wp(o),q:wq(o)}}
  const ft=W0.foot_l.p.clone().add(W0.foot_r.p).multiplyScalar(0.5);rockPose(0.1,0);const d1=wp(B('pelvis')).distanceTo(ft);SG=d1<W0.pelvis.p.distanceTo(ft)?1:-1;restore();
  W.cow.plant=()=>{let mx=0;for(const n of['hand_l','hand_r','calf_l','calf_r','foot_l','foot_r'])mx=Math.max(mx,wp(B(n)).distanceTo(W0[n].p));return +(mx*100).toFixed(3)};
- W.cow.pelvisShift=()=>+(wp(B('pelvis')).distanceTo(W0.pelvis.p)*100).toFixed(2)}
+ W.cow.plantD=()=>Object.fromEntries([`hand_l`,`hand_r`,`calf_l`,`calf_r`,`foot_l`,`foot_r`].map(n=>[n,+(wp(B(n)).distanceTo(W0[n].p)*100).toFixed(2)]));W.cow.pose=(t,l)=>{rockPose(t,l);return W.cow.plantD()};W.cow.pelvisShift=()=>+(wp(B('pelvis')).distanceTo(W0.pelvis.p)*100).toFixed(2)}
 function restore(){for(const[o,r]of REST){o.quaternion.copy(r.q);o.position.copy(r.p)}RM.updateMatrixWorld(true)}
 function twoBone(a,b,c,T){const A=wp(a),Bp=wp(b),Cp=wp(c),la=A.distanceTo(Bp),lb=Bp.distanceTo(Cp);const d=THREE.MathUtils.clamp(A.distanceTo(T),Math.abs(la-lb)+1e-4,la+lb-1e-4);
  const u=A.clone().sub(Bp),v=Cp.clone().sub(Bp),n=u.clone().cross(v).normalize();const cur=u.angleTo(v),des=Math.acos(THREE.MathUtils.clamp((la*la+lb*lb-d*d)/(2*la*lb),-1,1));
