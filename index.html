@@ -26,7 +26,7 @@ new GLTFLoader().load('cow.glb',g=>{
  m.traverse(o=>{if(o.isMesh){meshes.push(o);o.frustumCulled=false;const ms=Array.isArray(o.material)?o.material:[o.material];ms.forEach(x=>{x.transparent=false;x.depthWrite=true;x.opacity=1;if(/hair|eyebrow|eyelash|high-poly/i.test(x.name)){x.alphaTest=0.5;x.side=THREE.DoubleSide}})}});
  const mix=new THREE.AnimationMixer(m);g.animations.forEach(c=>mix.clipAction(c).play());mix.setTime(0);
  m.updateMatrixWorld(true);
- const box=new THREE.Box3().setFromObject(m);const c=box.getCenter(new THREE.Vector3());O.target.copy(c);C.position.set(c.x+1.6,c.y+0.35,c.z+0.9);
+ const box=new THREE.Box3().setFromObject(m);const c=box.getCenter(new THREE.Vector3());O.target.copy(c);const sz=box.getSize(new THREE.Vector3()).length();const fit=()=>{const k=Math.max(1,1.3/C.aspect);C.position.set(c.x+0.85*sz*k,c.y+0.2*sz,c.z+0.5*sz*k);O.update()};fit();W.cow.fit=fit;
  const def={breast:{max:0.03,rib:0.012,lat:0.008,f:1,sag:0.85},glute:{max:0.022,rib:0.022,lat:0.012,f:0.9,sag:0.6}};
  for(const n of['breast_l','breast_r','glute_l','glute_r']){const b=m.getObjectByName(n);if(!b)continue;const t=n.split('_')[0];
   springs.push({b,name:n,type:t,p:def[t],rest:b.position.clone(),d:new THREE.Vector3(),v:new THREE.Vector3(),side:n.endsWith('_l')?1:-1,wp:new THREE.Vector3()})}
@@ -67,7 +67,7 @@ R.domElement.addEventListener('pointerdown',e=>{down={x:e.clientX,y:e.clientY,t:
 R.domElement.addEventListener('pointerup',e=>{if(!down)return;const mv=Math.hypot(e.clientX-down.x,e.clientY-down.y),tt=performance.now()-down.t;down=null;if(mv>8||tt>400)return;bump(e.clientX,e.clientY)});
 function bump(x,y){const r=R.domElement.getBoundingClientRect();ray.setFromCamera(new THREE.Vector2((x-r.left)/r.width*2-1,-((y-r.top)/r.height)*2+1),C);
  const h=ray.intersectObjects(meshes,false).filter(h=>!/YogaMat|Cube/.test(h.object.name))[0];W.cow.lastHit=h?h.point.toArray():null;if(!h)return false;
- impulse(h.point,ray.ray.direction.clone(),0.9*st.str);W.cow.bumps=(W.cow.bumps||0)+1;return true}
+ impulse(h.point,ray.ray.direction.clone(),1.6*st.str,0.2);W.cow.bumps=(W.cow.bumps||0)+1;return true}
 W.cow.bump=bump;
 document.getElementById('nudge').onclick=()=>{const d=hipDir().multiplyScalar(-1);d.y=-0.4;for(const s of springs)s.v.addScaledVector(d,0.45*st.str)};
 document.getElementById('rock').onclick=()=>{rockT=0};
@@ -75,13 +75,14 @@ document.getElementById('reset').onclick=()=>{for(const s of springs){s.d.set(0,
 let last=performance.now(),prevRoot=new THREE.Vector3(),prevVel=new THREE.Vector3();
 function loop(now){requestAnimationFrame(loop);let dt=Math.min(0.05,(now-last)/1000);last=now;
  if(springs.length){
-  if(rockT>=0){rockT+=dt;const hd=hipDir();const a=0.03*st.str*Math.sin(2*Math.PI*0.6*rockT)*Math.exp(-rockT*0.5);root.position.copy(hd).multiplyScalar(a);if(rockT>6){rockT=-1;root.position.set(0,0,0)}}
+  if(rockT>=0){rockT+=dt;const hd=hipDir();const a=0.05*st.str*Math.sin(2*Math.PI*0.6*rockT)*Math.exp(-rockT*0.5);root.position.copy(hd).multiplyScalar(a);if(rockT>6){rockT=-1;root.position.set(0,0,0)}}
   // inertial drive from root motion
   const vel=root.position.clone().sub(prevRoot).divideScalar(Math.max(dt,1e-3));const acc=vel.clone().sub(prevVel).divideScalar(Math.max(dt,1e-3));prevRoot.copy(root.position);prevVel.copy(vel);
-  const n=8;for(let i=0;i<n;i++){for(const s of springs)s.v.addScaledVector(acc,-dt/n);step(dt/n)}
+  const n=8;for(let i=0;i<n;i++){for(const s of springs)s.v.addScaledVector(acc,-4*dt/n);step(dt/n)}
   apply();W.cow.disp=springs.map(s=>+(s.d.length()*100).toFixed(2));}
  O.update();R.render(S,C)}
 requestAnimationFrame(loop);
 addEventListener('resize',()=>{C.aspect=innerWidth/innerHeight;C.updateProjectionMatrix();R.setSize(innerWidth,innerHeight)});
+W.cow.screenOf=n=>{const b=root.getObjectByName(n);const v=b.getWorldPosition(new THREE.Vector3());if(n.startsWith('breast'))v.y-=0.08;v.project(C);return [Math.round((v.x+1)/2*innerWidth),Math.round((1-v.y)/2*innerHeight)]};
 addEventListener('error',e=>W.cow.errs.push(String(e.message)));
 </script></body></html>
