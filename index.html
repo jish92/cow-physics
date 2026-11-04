@@ -46,7 +46,7 @@ function alignHang(m){W.cow.hangBefore=hangAngles(m);
   const wq=b.getWorldQuaternion(new THREE.Quaternion()),pq=b.parent.getWorldQuaternion(new THREE.Quaternion());
   b.quaternion.copy(pq.invert().multiply(dq.multiply(wq)));m.updateMatrixWorld(true)}
  W.cow.hangAfter=hangAngles(m);W.cow.hangAngles=()=>hangAngles(m)}
-let RM=null,REST=null,W0={},SG=1,rph=0,rs=0;const NB=['pelvis','spine_01','thigh_l','thigh_r','calf_l','calf_r','foot_l','foot_r','upperarm_l','upperarm_r','lowerarm_l','lowerarm_r','hand_l','hand_r'];
+const DRV={g:6,a0:1.2,soft:900};W.cow.drv=DRV;let RM=null,REST=null,W0={},SG=1,rph=0,rs=0;const NB=['pelvis','spine_01','thigh_l','thigh_r','calf_l','calf_r','foot_l','foot_r','upperarm_l','upperarm_r','lowerarm_l','lowerarm_r','hand_l','hand_r'];
 const B=n=>RM.getObjectByName(n),wp=o=>o.getWorldPosition(new THREE.Vector3()),wq=o=>o.getWorldQuaternion(new THREE.Quaternion());
 function setWQ(o,q){o.quaternion.copy(wq(o.parent).invert().multiply(q));o.updateMatrixWorld(true)}
 function setWP(o,p){o.parent.updateWorldMatrix(true,false);o.position.copy(o.parent.worldToLocal(p.clone()));o.updateMatrixWorld(true)}
@@ -78,7 +78,7 @@ function step(dt){const k0=(2*Math.PI*st.f)**2,hd=hipDir();
   const a=new THREE.Vector3(-k*s.d.x-c*s.v.x,-ky*s.d.y-c*s.v.y,-k*s.d.z-c*s.v.z);
   s.v.addScaledVector(a,dt);s.d.addScaledVector(s.v,dt);
   // clamps: overall, toward ribs (breasts->hips dir), lateral inward/outward (arms)
-  if(s.d.length()>s.p.max){s.d.setLength(s.p.max);s.v.multiplyScalar(0.5)}
+  {const L=s.d.length(),M=s.p.max,k0=0.65*M;if(L>k0){const e=(L-k0)/(M-k0);s.v.addScaledVector(s.d,-(dt*DRV.soft*e*e/L));}if(L>M*1.15){s.d.setLength(M*1.15);s.v.multiplyScalar(0.5)}}
   const along=s.d.dot(hd);if(s.type=='breast'&&along>s.p.rib){s.d.addScaledVector(hd,s.p.rib-along);s.v.addScaledVector(hd,-Math.max(0,s.v.dot(hd)))}
   const lat=new THREE.Vector3(-hd.z,0,hd.x);const l=s.d.dot(lat);if(Math.abs(l)>s.p.lat){s.d.addScaledVector(lat,Math.sign(l)*s.p.lat-l)}
  }}
@@ -101,8 +101,8 @@ function loop(now){requestAnimationFrame(loop);let dt=Math.min(0.05,(now-last)/1
   // inertial drive from root motion
   if(RM){if(st.rb>0){rph+=2*Math.PI*st.rb*dt;rs=(1-Math.cos(rph))/2}else{rs*=Math.exp(-dt*3);if(rs<1e-4){rs=0;rph=0}}rockPose(THREE.MathUtils.degToRad(28)*rs,1.4);W.cow.rs=rs}
   root.updateMatrixWorld(true);
-  for(const s of springs){const an=s.b.parent.localToWorld(s.rest.clone());if(!s.pa){s.pa=an.clone();s.pv=new THREE.Vector3()}const vel=an.clone().sub(s.pa).divideScalar(Math.max(dt,1e-3));s.acc=vel.clone().sub(s.pv).divideScalar(Math.max(dt,1e-3));if(s.acc.length()>60)s.acc.setLength(60);s.pa.copy(an);s.pv.copy(vel)}
-  const n=8;for(let i=0;i<n;i++){for(const s of springs)s.v.addScaledVector(s.acc,-3*dt/n);step(dt/n)}
+  for(const s of springs){const an=s.b.parent.localToWorld(s.rest.clone());if(!s.pa){s.pa=an.clone();s.pv=new THREE.Vector3()}const vel=an.clone().sub(s.pa).divideScalar(Math.max(dt,1e-3));s.acc=vel.clone().sub(s.pv).divideScalar(Math.max(dt,1e-3));if(s.acc.length()>60)s.acc.setLength(60);s.pa.copy(an);s.pv.copy(vel);const a=s.acc.length();s.ae=a>1e-6?s.acc.clone().multiplyScalar(DRV.g*DRV.a0*Math.tanh(a/DRV.a0)/a):s.acc.clone().set(0,0,0)}
+  const n=8;for(let i=0;i<n;i++){for(const s of springs)s.v.addScaledVector(s.ae,-dt/n);step(dt/n)}
   apply();W.cow.disp=springs.map(s=>+(s.d.length()*100).toFixed(2));}
  O.update();R.render(S,C)}
 requestAnimationFrame(loop);
