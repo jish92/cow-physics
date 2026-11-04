@@ -1,0 +1,87 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Cow pose physics</title>
+<style>html,body{margin:0;height:100%;overflow:hidden;background:#dfe3e8;font-family:sans-serif}canvas{touch-action:none;display:block}
+#ui{position:fixed;left:8px;bottom:8px;background:rgba(255,255,255,.88);padding:8px 10px;border-radius:10px;font-size:13px;max-width:92vw}
+#ui label{display:flex;align-items:center;gap:6px;margin:3px 0}#ui input{flex:1;min-width:110px}#ui button{font-size:15px;padding:8px 12px;margin:2px}
+#msg{position:fixed;top:8px;left:8px;font-size:13px;color:#333}</style>
+<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.169.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.169.0/examples/jsm/"}}</script></head>
+<body><div id="msg">Loading…</div>
+<div id="ui"><div><button id="nudge">Nudge</button><button id="rock">Rock</button><button id="reset">Reset</button></div>
+<label>Strength<input id="str" type="range" min="0.2" max="3" step="0.1" value="1"><span id="strv">1</span></label>
+<label>Freq Hz<input id="frq" type="range" min="1" max="4" step="0.1" value="2.1"><span id="frqv">2.1</span></label>
+<label>Damping<input id="dmp" type="range" min="0.05" max="0.8" step="0.01" value="0.25"><span id="dmpv">0.25</span></label>
+<div style="font-size:11px;color:#555">Tap/click body to bump · drag to orbit · pinch to zoom</div></div>
+<script type="module">
+import * as THREE from 'three';import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+const R=new THREE.WebGLRenderer({antialias:true});R.setPixelRatio(Math.min(devicePixelRatio,2));R.setSize(innerWidth,innerHeight);document.body.prepend(R.domElement);
+const S=new THREE.Scene();S.background=new THREE.Color(0xdfe3e8);
+const C=new THREE.PerspectiveCamera(35,innerWidth/innerHeight,0.05,100);C.position.set(1.9,0.9,0.6);
+const O=new OrbitControls(C,R.domElement);O.target.set(0,0.5,0);O.enableDamping=true;
+S.add(new THREE.HemisphereLight(0xffffff,0x8a8a8a,2.2));const dl=new THREE.DirectionalLight(0xffffff,2);dl.position.set(2,4,3);S.add(dl);
+const st={str:1,f:2.1,z:0.25};for(const[id,k]of[['str','str'],['frq','f'],['dmp','z']]){const e=document.getElementById(id);e.oninput=()=>{st[k]=+e.value;document.getElementById(id+'v').textContent=e.value}}
+const W=window;W.cow={ready:false,errs:[]};
+const root=new THREE.Group();S.add(root);let meshes=[],springs=[],rockT=-1;
+new GLTFLoader().load('cow.glb',g=>{
+ const m=g.scene;root.add(m);
+ m.traverse(o=>{if(o.isMesh){meshes.push(o);o.frustumCulled=false;const ms=Array.isArray(o.material)?o.material:[o.material];ms.forEach(x=>{x.transparent=false;x.depthWrite=true;x.opacity=1;if(/hair|eyebrow|eyelash|high-poly/i.test(x.name)){x.alphaTest=0.5;x.side=THREE.DoubleSide}})}});
+ const mix=new THREE.AnimationMixer(m);g.animations.forEach(c=>mix.clipAction(c).play());mix.setTime(0);
+ m.updateMatrixWorld(true);
+ const box=new THREE.Box3().setFromObject(m);const c=box.getCenter(new THREE.Vector3());O.target.copy(c);C.position.set(c.x+1.6,c.y+0.35,c.z+0.9);
+ const def={breast:{max:0.03,rib:0.012,lat:0.008,f:1,sag:0.85},glute:{max:0.022,rib:0.022,lat:0.012,f:0.9,sag:0.6}};
+ for(const n of['breast_l','breast_r','glute_l','glute_r']){const b=m.getObjectByName(n);if(!b)continue;const t=n.split('_')[0];
+  springs.push({b,name:n,type:t,p:def[t],rest:b.position.clone(),d:new THREE.Vector3(),v:new THREE.Vector3(),side:n.endsWith('_l')?1:-1,wp:new THREE.Vector3()})}
+ alignHang(m);
+ W.cow.springs=springs.map(s=>s.name);W.cow.ready=true;document.getElementById('msg').textContent='';
+},undefined,e=>{W.cow.errs.push(String(e));document.getElementById('msg').textContent='Load error'});
+function breastAxis(m,name){const body=meshes.find(o=>o.isSkinnedMesh&&o.skeleton.bones.some(b=>b.name==name)&&o.geometry.attributes.position.count>10000&&/base$/.test(o.geometry.name||o.name)||o.name=='Body')||meshes.find(o=>o.isSkinnedMesh);
+ const b=m.getObjectByName(name),ix=body.skeleton.bones.indexOf(b),si=body.geometry.attributes.skinIndex,sw=body.geometry.attributes.skinWeight;
+ const c=new THREE.Vector3(),v=new THREE.Vector3();let n=0;body.updateMatrixWorld(true);body.skeleton.update();
+ for(let i=0;i<si.count;i++)for(let k=0;k<4;k++)if(si.getComponent(i,k)==ix&&sw.getComponent(i,k)>0.5){body.getVertexPosition(i,v);body.localToWorld(v);c.add(v);n++;break}
+ c.divideScalar(Math.max(n,1));const bp=b.getWorldPosition(new THREE.Vector3());return {b,dir:c.sub(bp).normalize(),n}}
+function hangAngles(m){return ['breast_l','breast_r'].map(n=>{const a=breastAxis(m,n);return +(THREE.MathUtils.radToDeg(a.dir.angleTo(new THREE.Vector3(0,-1,0)))).toFixed(2)})}
+function alignHang(m){W.cow.hangBefore=hangAngles(m);
+ for(let it=0;it<3;it++)for(const n of['breast_l','breast_r']){const {b,dir}=breastAxis(m,n);
+  const dq=new THREE.Quaternion().setFromUnitVectors(dir,new THREE.Vector3(0,-1,0));
+  const wq=b.getWorldQuaternion(new THREE.Quaternion()),pq=b.parent.getWorldQuaternion(new THREE.Quaternion());
+  b.quaternion.copy(pq.invert().multiply(dq.multiply(wq)));m.updateMatrixWorld(true)}
+ W.cow.hangAfter=hangAngles(m);W.cow.hangAngles=()=>hangAngles(m)}
+// world up=y. forward/back along x/z depends on model; ribs direction for breasts = toward pelvis
+const tmp=new THREE.Vector3(),tmp2=new THREE.Vector3();
+function hipDir(){const p=root.getObjectByName('pelvis'),s=root.getObjectByName('spine_03');if(!p||!s)return new THREE.Vector3(1,0,0);return p.getWorldPosition(new THREE.Vector3()).sub(s.getWorldPosition(new THREE.Vector3())).setY(0).normalize()}
+function impulse(pt,dir,mag,rad=0.14){for(const s of springs){s.b.getWorldPosition(s.wp);const w=Math.exp(-(s.wp.distanceToSquared(pt))/(rad*rad));s.v.addScaledVector(dir,mag*w)}}
+function step(dt){const k0=(2*Math.PI*st.f)**2,hd=hipDir();
+ for(const s of springs){const k=k0*s.p.f,c=2*st.z*Math.sqrt(k);
+  // gravity bias: softer going down, stiffer going up
+  const ky=s.d.y<0?k*s.p.sag:k/s.p.sag;
+  const a=new THREE.Vector3(-k*s.d.x-c*s.v.x,-ky*s.d.y-c*s.v.y,-k*s.d.z-c*s.v.z);
+  s.v.addScaledVector(a,dt);s.d.addScaledVector(s.v,dt);
+  // clamps: overall, toward ribs (breasts->hips dir), lateral inward/outward (arms)
+  if(s.d.length()>s.p.max){s.d.setLength(s.p.max);s.v.multiplyScalar(0.5)}
+  const along=s.d.dot(hd);if(s.type=='breast'&&along>s.p.rib){s.d.addScaledVector(hd,s.p.rib-along);s.v.addScaledVector(hd,-Math.max(0,s.v.dot(hd)))}
+  const lat=new THREE.Vector3(-hd.z,0,hd.x);const l=s.d.dot(lat);if(Math.abs(l)>s.p.lat){s.d.addScaledVector(lat,Math.sign(l)*s.p.lat-l)}
+ }}
+function apply(){for(const s of springs){const par=s.b.parent;par.updateWorldMatrix(true,false);const wr=par.localToWorld(s.rest.clone());const wn=wr.add(s.d);s.b.position.copy(par.worldToLocal(wn))}}
+// interaction
+const ray=new THREE.Raycaster();let down=null;
+R.domElement.addEventListener('pointerdown',e=>{down={x:e.clientX,y:e.clientY,t:performance.now()}});
+R.domElement.addEventListener('pointerup',e=>{if(!down)return;const mv=Math.hypot(e.clientX-down.x,e.clientY-down.y),tt=performance.now()-down.t;down=null;if(mv>8||tt>400)return;bump(e.clientX,e.clientY)});
+function bump(x,y){const r=R.domElement.getBoundingClientRect();ray.setFromCamera(new THREE.Vector2((x-r.left)/r.width*2-1,-((y-r.top)/r.height)*2+1),C);
+ const h=ray.intersectObjects(meshes,false).filter(h=>!/YogaMat|Cube/.test(h.object.name))[0];W.cow.lastHit=h?h.point.toArray():null;if(!h)return false;
+ impulse(h.point,ray.ray.direction.clone(),0.9*st.str);W.cow.bumps=(W.cow.bumps||0)+1;return true}
+W.cow.bump=bump;
+document.getElementById('nudge').onclick=()=>{const d=hipDir().multiplyScalar(-1);d.y=-0.4;for(const s of springs)s.v.addScaledVector(d,0.45*st.str)};
+document.getElementById('rock').onclick=()=>{rockT=0};
+document.getElementById('reset').onclick=()=>{for(const s of springs){s.d.set(0,0,0);s.v.set(0,0,0)}rockT=-1;root.position.set(0,0,0)};
+let last=performance.now(),prevRoot=new THREE.Vector3(),prevVel=new THREE.Vector3();
+function loop(now){requestAnimationFrame(loop);let dt=Math.min(0.05,(now-last)/1000);last=now;
+ if(springs.length){
+  if(rockT>=0){rockT+=dt;const hd=hipDir();const a=0.03*st.str*Math.sin(2*Math.PI*0.6*rockT)*Math.exp(-rockT*0.5);root.position.copy(hd).multiplyScalar(a);if(rockT>6){rockT=-1;root.position.set(0,0,0)}}
+  // inertial drive from root motion
+  const vel=root.position.clone().sub(prevRoot).divideScalar(Math.max(dt,1e-3));const acc=vel.clone().sub(prevVel).divideScalar(Math.max(dt,1e-3));prevRoot.copy(root.position);prevVel.copy(vel);
+  const n=8;for(let i=0;i<n;i++){for(const s of springs)s.v.addScaledVector(acc,-dt/n);step(dt/n)}
+  apply();W.cow.disp=springs.map(s=>+(s.d.length()*100).toFixed(2));}
+ O.update();R.render(S,C)}
+requestAnimationFrame(loop);
+addEventListener('resize',()=>{C.aspect=innerWidth/innerHeight;C.updateProjectionMatrix();R.setSize(innerWidth,innerHeight)});
+addEventListener('error',e=>W.cow.errs.push(String(e.message)));
+</script></body></html>
