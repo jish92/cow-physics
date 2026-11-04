@@ -99,8 +99,10 @@ function loop(now){requestAnimationFrame(loop);let dt=Math.min(0.05,(now-last)/1
  if(springs.length){
   if(rockT>=0){rockT+=dt;const hd=hipDir();const a=0.05*st.str*Math.sin(2*Math.PI*0.6*rockT)*Math.exp(-rockT*0.5);root.position.copy(hd).multiplyScalar(a);if(rockT>6){rockT=-1;root.position.set(0,0,0)}}
   // inertial drive from root motion
-  const vel=root.position.clone().sub(prevRoot).divideScalar(Math.max(dt,1e-3));const acc=vel.clone().sub(prevVel).divideScalar(Math.max(dt,1e-3));prevRoot.copy(root.position);prevVel.copy(vel);
-  const n=8;for(let i=0;i<n;i++){for(const s of springs)s.v.addScaledVector(acc,-4*dt/n);step(dt/n)}
+  if(RM){if(st.rb>0){rph+=2*Math.PI*st.rb*dt;rs=(1-Math.cos(rph))/2}else{rs*=Math.exp(-dt*3);if(rs<1e-4){rs=0;rph=0}}rockPose(THREE.MathUtils.degToRad(28)*rs,0.6);W.cow.rs=rs}
+  root.updateMatrixWorld(true);
+  for(const s of springs){const an=s.b.parent.localToWorld(s.rest.clone());if(!s.pa){s.pa=an.clone();s.pv=new THREE.Vector3()}const vel=an.clone().sub(s.pa).divideScalar(Math.max(dt,1e-3));s.acc=vel.clone().sub(s.pv).divideScalar(Math.max(dt,1e-3));if(s.acc.length()>60)s.acc.setLength(60);s.pa.copy(an);s.pv.copy(vel)}
+  const n=8;for(let i=0;i<n;i++){for(const s of springs)s.v.addScaledVector(s.acc,-3*dt/n);step(dt/n)}
   apply();W.cow.disp=springs.map(s=>+(s.d.length()*100).toFixed(2));}
  O.update();R.render(S,C)}
 requestAnimationFrame(loop);
