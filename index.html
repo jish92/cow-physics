@@ -7,6 +7,7 @@
 <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.169.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.169.0/examples/jsm/"}}</script></head>
 <body><div id="msg">Loading…</div>
 <div id="ui"><div><button id="nudge">Nudge</button><button id="rock">Rock</button><button id="reset">Reset</button></div>
+<label>Rock back Hz<input id="rb" type="range" min="0" max="1.5" step="0.05" value="0"><span id="rbv">0</span></label>
 <label>Strength<input id="str" type="range" min="0.2" max="3" step="0.1" value="1"><span id="strv">1</span></label>
 <label>Freq Hz<input id="frq" type="range" min="1" max="4" step="0.1" value="2.1"><span id="frqv">2.1</span></label>
 <label>Damping<input id="dmp" type="range" min="0.05" max="0.8" step="0.01" value="0.25"><span id="dmpv">0.25</span></label>
@@ -18,7 +19,7 @@ const S=new THREE.Scene();S.background=new THREE.Color(0xdfe3e8);
 const C=new THREE.PerspectiveCamera(35,innerWidth/innerHeight,0.05,100);C.position.set(1.9,0.9,0.6);
 const O=new OrbitControls(C,R.domElement);O.target.set(0,0.5,0);O.enableDamping=true;
 S.add(new THREE.HemisphereLight(0xffffff,0x8a8a8a,2.2));const dl=new THREE.DirectionalLight(0xffffff,2);dl.position.set(2,4,3);S.add(dl);
-const st={str:1,f:2.1,z:0.25};for(const[id,k]of[['str','str'],['frq','f'],['dmp','z']]){const e=document.getElementById(id);e.oninput=()=>{st[k]=+e.value;document.getElementById(id+'v').textContent=e.value}}
+const st={str:1,f:2.1,z:0.25};st.rb=0;for(const[id,k]of[['rb','rb'],['str','str'],['frq','f'],['dmp','z']]){const e=document.getElementById(id);e.oninput=()=>{st[k]=+e.value;document.getElementById(id+'v').textContent=e.value}}
 const W=window;W.cow={ready:false,errs:[]};
 const root=new THREE.Group();S.add(root);let meshes=[],springs=[],rockT=-1;
 new GLTFLoader().load('cow.glb',g=>{
@@ -30,7 +31,7 @@ new GLTFLoader().load('cow.glb',g=>{
  const def={breast:{max:0.03,rib:0.012,lat:0.008,f:1,sag:0.85},glute:{max:0.022,rib:0.022,lat:0.012,f:0.9,sag:0.6}};
  for(const n of['breast_l','breast_r','glute_l','glute_r']){const b=m.getObjectByName(n);if(!b)continue;const t=n.split('_')[0];
   springs.push({b,name:n,type:t,p:def[t],rest:b.position.clone(),d:new THREE.Vector3(),v:new THREE.Vector3(),side:n.endsWith('_l')?1:-1,wp:new THREE.Vector3()})}
- alignHang(m);
+ alignHang(m);initRock(m);
  W.cow.springs=springs.map(s=>s.name);W.cow.ready=true;document.getElementById('msg').textContent='';
 },undefined,e=>{W.cow.errs.push(String(e));document.getElementById('msg').textContent='Load error'});
 function breastAxis(m,name){const body=meshes.find(o=>o.isSkinnedMesh&&o.skeleton.bones.some(b=>b.name==name)&&o.geometry.attributes.position.count>10000&&/base$/.test(o.geometry.name||o.name)||o.name=='Body')||meshes.find(o=>o.isSkinnedMesh);
@@ -45,6 +46,27 @@ function alignHang(m){W.cow.hangBefore=hangAngles(m);
   const wq=b.getWorldQuaternion(new THREE.Quaternion()),pq=b.parent.getWorldQuaternion(new THREE.Quaternion());
   b.quaternion.copy(pq.invert().multiply(dq.multiply(wq)));m.updateMatrixWorld(true)}
  W.cow.hangAfter=hangAngles(m);W.cow.hangAngles=()=>hangAngles(m)}
+let RM=null,REST=null,W0={},SG=1,rph=0,rs=0;const NB=['pelvis','spine_01','thigh_l','thigh_r','calf_l','calf_r','foot_l','foot_r','upperarm_l','upperarm_r','lowerarm_l','lowerarm_r','hand_l','hand_r'];
+const B=n=>RM.getObjectByName(n),wp=o=>o.getWorldPosition(new THREE.Vector3()),wq=o=>o.getWorldQuaternion(new THREE.Quaternion());
+function setWQ(o,q){o.quaternion.copy(wq(o.parent).invert().multiply(q));o.updateMatrixWorld(true)}
+function setWP(o,p){o.parent.updateWorldMatrix(true,false);o.position.copy(o.parent.worldToLocal(p.clone()));o.updateMatrixWorld(true)}
+function initRock(m){RM=m;REST=new Map();m.traverse(o=>{if(o.isBone)REST.set(o,{q:o.quaternion.clone(),p:o.position.clone()})});m.updateMatrixWorld(true);
+ for(const n of NB){const o=B(n);W0[n]={p:wp(o),q:wq(o)}}
+ const ft=W0.foot_l.p.clone().add(W0.foot_r.p).multiplyScalar(0.5);rockPose(0.1,0);const d1=wp(B('pelvis')).distanceTo(ft);SG=d1<W0.pelvis.p.distanceTo(ft)?1:-1;restore();
+ W.cow.plant=()=>{let mx=0;for(const n of['hand_l','hand_r','calf_l','calf_r','foot_l','foot_r'])mx=Math.max(mx,wp(B(n)).distanceTo(W0[n].p));return +(mx*100).toFixed(3)};
+ W.cow.pelvisShift=()=>+(wp(B('pelvis')).distanceTo(W0.pelvis.p)*100).toFixed(2)}
+function restore(){for(const[o,r]of REST){o.quaternion.copy(r.q);o.position.copy(r.p)}RM.updateMatrixWorld(true)}
+function twoBone(a,b,c,T){const A=wp(a),Bp=wp(b),Cp=wp(c),la=A.distanceTo(Bp),lb=Bp.distanceTo(Cp);const d=THREE.MathUtils.clamp(A.distanceTo(T),Math.abs(la-lb)+1e-4,la+lb-1e-4);
+ const u=A.clone().sub(Bp),v=Cp.clone().sub(Bp),n=u.clone().cross(v).normalize();const cur=u.angleTo(v),des=Math.acos(THREE.MathUtils.clamp((la*la+lb*lb-d*d)/(2*la*lb),-1,1));
+ if(n.lengthSq()>0.5)setWQ(b,new THREE.Quaternion().setFromAxisAngle(n,des-cur).multiply(wq(b)));
+ const C2=wp(c),A2=wp(a);setWQ(a,new THREE.Quaternion().setFromUnitVectors(C2.sub(A2).normalize(),T.clone().sub(A2).normalize()).multiply(wq(a)))}
+function rockPose(th,lean){restore();const K=W0.calf_l.p.clone().add(W0.calf_r.p).multiplyScalar(0.5),ax=W0.calf_l.p.clone().sub(W0.calf_r.p).normalize();
+ const Q=new THREE.Quaternion().setFromAxisAngle(ax,SG*th),pv=B('pelvis');
+ setWP(pv,W0.pelvis.p.clone().sub(K).applyQuaternion(Q).add(K));setWQ(pv,Q.clone().multiply(W0.pelvis.q));
+ const sp=B('spine_01');setWQ(sp,new THREE.Quaternion().setFromAxisAngle(ax,-SG*th*lean).multiply(wq(sp)));
+ for(const s of'lr'){setWQ(B('calf_'+s),W0['calf_'+s].q);setWQ(B('foot_'+s),W0['foot_'+s].q);
+  for(let i=0;i<2;i++)twoBone(B('upperarm_'+s),B('lowerarm_'+s),B('hand_'+s),W0['hand_'+s].p);setWQ(B('hand_'+s),W0['hand_'+s].q)}}
+W.cow.setRock=(v)=>{st.rb=v;document.getElementById('rb').value=v;document.getElementById('rbv').textContent=v};
 // world up=y. forward/back along x/z depends on model; ribs direction for breasts = toward pelvis
 const tmp=new THREE.Vector3(),tmp2=new THREE.Vector3();
 function hipDir(){const p=root.getObjectByName('pelvis'),s=root.getObjectByName('spine_03');if(!p||!s)return new THREE.Vector3(1,0,0);return p.getWorldPosition(new THREE.Vector3()).sub(s.getWorldPosition(new THREE.Vector3())).setY(0).normalize()}
